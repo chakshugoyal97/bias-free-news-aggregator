@@ -1,0 +1,78 @@
+def getArticleList(aspect_scores, all_records, feed_size, end_date, no_of_aspects, div_coeff, past_feed_list):
+    ret_feed = np.empty( (0, all_records.shape[1]) )
+    
+    #1. Filter articles from last 15 days (rev. chrono.) - we consider only last 15 day articles
+    start_date = end_date - timedelta(days=15)
+    published_new = all_records[ (all_records[:,3] >= start_date) & (all_records[:,3] <= end_date) ]
+    published_new = published_new[published_new[:,3].argsort()[::-1]]
+        
+    #2. Get aspects & aspect scores, normalised them
+    aspects = np.array(range(no_of_aspects))
+    if np.sum(aspect_scores) == 0:
+        aspect_scores = np.array([1/no_of_aspects]*no_of_aspects)
+    norm_aspect_scores = aspect_scores/np.sum(aspect_scores)
+    #print(aspect_scores)
+    #print(norm_aspect_scores)
+    
+    #3. Set up local exposure constraint for diversity - Elisa Celis
+    # Include a div_coeff ~~> represents diversity coefficient
+    a1l = norm_aspect_scores
+    b1l = np.array([1/no_of_aspects]*no_of_aspects)
+    u1l = (1-div_coeff)*a1l + (div_coeff)*b1l
+    #print(u1l)
+    
+    #4. Initialise aspect exposures observed over last 14 days and filled counter
+    asp_exposure = np.array([0]*no_of_aspects)
+    if len(past_feed_list) != 0:
+        past_feed_list = np.vstack(past_feed_list)
+        for article in past_feed_list:
+            asp_exposure[article[1]] += 1 
+    filled = len(past_feed_list)
+    
+    #from IPython import embed; embed()
+    
+    #5. Start filling slots
+    for slot in range(feed_size):
+        
+        # Exhausted constraints or not; start with index 0.
+        exhausted = False
+        next_asp = 0
+        found = False
+        
+        # Try each aspect, If does not violate constraint - use it; break;
+        #                  If can't find an article for it - update asp_exposure, u1l, aspects; continue;
+        # If all aspects violate constraint - let it be empty
+        for each_aspect in aspects:
+            if ( (filled+1)*u1l[each_aspect] >= (asp_exposure[each_aspect] - 1)):
+                # Use it - Doesn't violate & found
+                for index, article in enumerate(published_new):
+                    if each_aspect in article[1]:
+                        ret_feed = np.vstack([ret_feed, article])
+                        published_new = np.delete(published_new, (index), axis=0)
+                        filled += 1
+                        found = True
+
+                        # Update all aspect's exposures
+                        asp_exposure[np.intersect1d(article[1], aspects)] += 1
+                        break
+
+                # If that aspect does not exist in any recent articles - 
+                # then delete that aspect - doesn't violate & not found
+                if not found:
+                    #print("Mayhem - ", each_aspect)
+                    aspects = np.delete(aspects, np.where(aspects == each_aspect))
+                    ##print(aspects)
+                    # Redistribute the rest feed among other aspects
+                    filled -= asp_exposure[each_aspect]
+                    u1l = u1l/u1l[aspects].sum()
+                # If found an aspect for this slot
+                else:
+                    break
+
+        # If all violate constraint - let the feed be this much only
+        if not found:
+            break
+
+    print("Feed filled :=> ",len(ret_feed),"/",feed_size)
+
+    return ret_feed
