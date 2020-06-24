@@ -1,0 +1,1 @@
+This file `News-timeline-analysis.ipynb` uses the collections made in `\..\Fetch Articles` to draw some basic timeline graphs and get some insights on the kind of media article collections that we have obtained.
